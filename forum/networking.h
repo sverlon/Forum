@@ -24,6 +24,15 @@ int create_socket(const char *ip, int port)
     server_addr.sin_addr.s_addr = ip ? inet_addr(ip) : INADDR_ANY;
     server_addr.sin_port = htons(port); // Port for HTTP
 
+    // Set SO_REUSEADDR option to allow reuse of the local address and port
+    int reuse = 1;
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1)
+    {
+        std::cerr << "Error setting socket option SO_REUSEADDR" << std::endl;
+        close(server_socket);
+        return EXIT_FAILURE;
+    }
+
     if (bind(server_socket, reinterpret_cast<sockaddr *>(&server_addr), sizeof(server_addr)) == -1)
     {
         std::cerr << "Error binding socket\n";

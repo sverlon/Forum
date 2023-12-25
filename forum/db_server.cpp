@@ -84,12 +84,16 @@ Status getPosts(sqlite3 *db, int client_socket)
     {
         // Process each row
         const char *title = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        std::cout << "title: " << title << std::endl;
         std::string res(title);
         res += "|";
         const char *content = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+        std::cout << "content: " << content << std::endl;
         res += std::string(content);
 
+        char ack;
         send(client_socket, res.data(), res.size(), 0);
+        recv(client_socket, &ack, 1, MSG_WAITALL);
     }
 
     // Finalize the statement and close the database
@@ -108,12 +112,26 @@ int main()
         return rc;
     }
 
-    const char *createTableSQL = "CREATE TABLE IF NOT EXISTS Posts ("
+    const char *createPostsSQL = "CREATE TABLE IF NOT EXISTS Posts ("
                                  "pid INTEGER PRIMARY KEY AUTOINCREMENT, "
                                  "title TEXT NOT NULL, "
                                  "content TEXT NOT NULL);";
 
-    rc = sqlite3_exec(db, createTableSQL, 0, 0, 0);
+    rc = sqlite3_exec(db, createPostsSQL, 0, 0, 0);
+
+    if (rc != SQLITE_OK)
+    {
+        std::cerr << "Error creating table: " << sqlite3_errmsg(db) << std::endl;
+        return int(Status::DATABASE_OPEN_ERROR);
+    }
+
+    const char *createCommentsSQL = "CREATE TABLE IF NOT EXISTS Comments ("
+                                    "cid INTEGER PRIMARY KEY AUTOINCREMENT, "
+                                    "pid INTEGER, "
+                                    "content TEXT NOT NULL, "
+                                    "FOREIGN KEY (pid) REFERENCES Posts(pid));";
+
+    rc = sqlite3_exec(db, createCommentsSQL, 0, 0, 0);
 
     if (rc != SQLITE_OK)
     {
@@ -148,49 +166,53 @@ int main()
         // Find the position of the first space
         size_t space_pos = instruct.find(' ');
 
-        try
+        // Split the string into two parts
+        Command command = Command(stoi(instruct.substr(0, space_pos)));
+
+        Status status;
+
+        switch (command)
         {
-            // Split the string into two parts
-            Command command = Command(stoi(instruct.substr(0, space_pos)));
-
-            Status status;
-
-            switch (command)
-            {
-            case Command::INSERT_POST:
-            {
-                // Further split to get title and content.
-                std::string afterSpace = instruct.substr(space_pos + 1);
-                size_t split_pos = afterSpace.find('|');
-                std::string title = afterSpace.substr(0, split_pos);
-                std::string content = afterSpace.substr(split_pos + 1);
-
-                status = createPost(db, title, content);
-
-                if (status == Status::INSERT_ERROR)
-                    throw std::runtime_error("Error: failed inserting post to database.");
-
-                send(client_socket, "OK", 3, 0);
-                break;
-            }
-            case Command::RETRIEVE_POSTS:
-                // In this case, we just want to get every post we can.
-                status = getPosts(db, client_socket);
-
-                if (status == Status::INSERT_ERROR)
-                    throw std::runtime_error("Error: failed inserting post to database.");
-
-                send(client_socket, "OK", 3, 0);
-                break;
-            default:
-                throw std::runtime_error("Error: request ill formatted.");
-            }
-        }
-        catch (const std::exception &e)
+        case Command::INSERT_POST:
         {
-            std::cerr << e.what() << std::endl;
-            send(client_socket, "FAIL", 5, 0);
+            // Further split to get title and content.
+            std::string afterSpace = instruct.substr(space_pos + 1);
+            size_t split_pos = afterSpace.find('|');
+            std::string title = afterSpace.substr(0, split_pos);
+            std::string content = afterSpace.substr(split_pos + 1);
+
+            status = createPost(db, title, content);
+
+            char ack[10];
+
+            if (status == Status::INSERT_ERROR)
+            {
+                strcpy(ack, "FAIL");
+                std::cout << "Sending FAIL status..." << std::endl;
+                send(client_socket, ack, 10, 0);
+            }
+            else
+            {
+                strcpy(ack, "OK");
+                std::cout << "Sending OK status..." << std::endl;
+                send(client_socket, ack, 10, 0);
+            }
+
+            break;
         }
+        case Command::RETRIEVE_POSTS:
+            // In this case, we just want to get every post we can.
+            status = getPosts(db, client_socket);
+
+            // if (status == Status::INSERT_ERROR)
+            // TODO: Handle failure case.
+            break;
+        default:
+            // TODO: Handle failure case.
+            break;
+        }
+
+        close(client_socket);
     }
 
     sqlite3_close(db);

@@ -1,5 +1,7 @@
-document.getElementById('createNewPost').addEventListener('click', function(event) {
+const createNewPost = document.getElementById('createNewPost');
 
+function handlePostEvent(event) {
+    event.stopPropagation();
     event.preventDefault();
 
     // Specify the target IP address and port
@@ -10,7 +12,7 @@ document.getElementById('createNewPost').addEventListener('click', function(even
     var message = document.getElementById('message').value;
 
     // Construct the URL with parameters
-    const url = `http://${ipAddress}:${port}/insert_post?title=` + title + `&content=` + message;
+    const url = `http://${ipAddress}:${port}/insert_post?title=${title}&content=${message}`;
 
     // Perform a simple GET request using the Fetch API
     fetch(url)
@@ -20,7 +22,14 @@ document.getElementById('createNewPost').addEventListener('click', function(even
             }
             return response.text();
         })
+        .then(data => {
+            // Reload the page after receiving the response
+            window.location.reload();
+        })
         .catch(error => {
             console.error('Error sending message:', error);
         });
-});
+}
+
+// Listen for both mousedown and touchstart events
+createNewPost.addEventListener('click', handlePostEvent, false);
